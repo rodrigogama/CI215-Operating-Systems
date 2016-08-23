@@ -10,7 +10,7 @@
  *  @param {queue_t *}  e - pointer to the element we want to append
 **/
 void queue_append(queue_t **q, queue_t *e) {
-
+    
     // checking whether the element is null or if it's already in another queue
     if (!e) { // empty element
         fprintf(stderr, "Element is null.\n");
@@ -21,12 +21,12 @@ void queue_append(queue_t **q, queue_t *e) {
         return;
     }
     
-	// checking whether the queue is null
-	if (!(*q)) { // Empty queue
-		e->prev = e; // because the queue is empty, 
-		e->next = e; // the e->prev and e->next aims
-		(*q) = e;      // to the element itself
-	}
+    // checking if the queue is null
+    if (!(*q)) { // Empty queue
+        e->prev = e; // because the queue is empty, 
+        e->next = e; // the e->prev and e->next aims
+        (*q) = e;      // to the element itself
+    }
     else { // Queue isn't empty   
         e->prev = (*q)->prev; // new element receives the last queue element as its previous
         e->next = (*q);       // new element receives the first queue element as its next
@@ -97,7 +97,7 @@ queue_t *queue_remove(queue_t **q, queue_t *e) {
  *  @return {int}       size - the queue's size
 **/
 int queue_size(queue_t *q) {
-	int size = 0;
+    int size = 0;
     
     if (!q) // queue is empty
         return size;
@@ -106,12 +106,12 @@ int queue_size(queue_t *q) {
     queue_t *aux = q;
     
     // while the next element isn't equals the first queue element, we get the next until both elements are the same. That means we've finished the queue and returned to the first element
-	while (aux->next != q) {
-		size++; // counting elements
+    while (aux->next != q) {
+        size++; // counting elements
         aux = aux->next; // get the next element
-	}
-    
-	return size; // queue's size
+    }
+
+    return size; // queue's size
 }
 
 /** @function queue_print
