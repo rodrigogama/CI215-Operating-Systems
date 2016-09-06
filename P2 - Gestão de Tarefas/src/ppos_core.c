@@ -20,7 +20,7 @@ void ppos_init() {
     setvbuf(stdout, 0, _IONBF, 0);
     
     // setting up the main task variables
-    mainTask.next = NULL;   // there's no next task
+    mainTask.next = NULL;   // at this point there's no next task
 	mainTask.prev = NULL;   // nor previous task
 	mainTask.tid = currentId; 	   // starting at 1
 	getcontext(&mainTask.context); // gets the current context
@@ -51,7 +51,7 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     char *stack;
     stack = malloc(STACKSIZE);
 
-    if (!stack) // can't create the task, so returns -1 (no id) 
+    if (!stack) // can't create the stack, so returns -1 (no id) 
         return -1;
     
     task->context.uc_stack.ss_sp = stack;       // stack is stored in task's context
@@ -60,7 +60,7 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     task->context.uc_link = 0;  // link to the next context to be executed, which is NULL, so 0
 
     // create the context for the given task
-    makecontext(&task->context, (void*)(*start_func), task->tid, arg);
+    makecontext(&task->context, (void*)(*start_func), 1, arg);
 
     #ifdef DEBUG
     printf ("task_create: task created at id: %d\n", task->tid) ;
