@@ -3,15 +3,16 @@
 #include "ppos.h"       // provided by the prof. Maziero. All functions MUST follow the prototypes in this header
 #include "ppos_data.h"  // ppos data structure
 #include <ucontext.h>   // for changing context
+#include "queue.h"
 
 //#define DEBUG        // for debbuging purposes
 
-int currentId = 1;     // keeping track for our contexts' ids. Starting at 1 to avoid one operation currentId++
+int currentId = 1;     // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
 task_t *currentTask;   // pointer to the current task, so that I can keep track of it during context exchange
-task_t dispatcherTask; // to create a dispatcher as a task
-task_t isReady;        //
 task_t mainTask;       // structure to the main task
 
+task_t dispatcherTask; // to create a dispatcher as a task
+task_t *queueTask = NULL; // queue of tasks using FCFS policy.
 
 /* scheduler and dispatcher function headers that are not in ppos.h */
 void dispatcher_body();
@@ -73,6 +74,9 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     // create the context for the given task
     makecontext(&task->context, (void*)(*start_func), 1, arg);
 
+    // append the task created to the queue
+    queue_append((queue_t **)&queueTask, (queue_t *)task);
+
     #ifdef DEBUG
     printf ("task_create: task created at id: %d\n", task->tid) ;
     #endif
@@ -81,13 +85,13 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
 }
 
 /** @function task_exit
- *  Finish the current task, indicating a closing status.context.
+ *  Finish the current task, indicating a closing status.
  *  For now, we will not use exitCode
  *  @param  {int} exitCode - exit code returned from the current task
 **/
 void task_exit(int exitCode) {
-    // changing the context to the main task
-    task_switch(&mainTask);
+    // switching to dispatcherTask or mainTask, based on what step we're at.
+    currentTask != &dispatcherTask ? task_switch(&dispatcherTask) : task_switch(&mainTask);
 
     #ifdef DEBUG
 	printf("task_exit: exiting task %d\n", currentTask->tid);
@@ -118,21 +122,13 @@ int task_id() {
     return currentTask == &mainTask ? 0 : currentTask->tid;
 }
 
-/** @function task_id
- *  Return a task id. If it is the main task, return 0. Otherwise, return the current task id
- *  @return {int} - 0 if it is the main task, > 0 otherwise
-**/
-int task_id() {
-    return currentTask == &mainTask ? 0 : currentTask->tid;
-}
-
 /** @function scheduler
  *  Choose the next task to be executed in every context exchange. The criteria is based on FCFS (First-Come, First-Served) policy.
  *  @return {task_t} *task
 **/
 task_t *scheduler() {
     task_t * res = NULL;
-    res = (task_t *)queue_remove((queue_t **)&prontos, (queue_t *)prontos);
+    res = (task_t *)queue_remove((queue_t **)&queueTask, (queue_t *)queueTask);
     
     #ifdef DEBUG
     if (!res) printf("scheduler: there is no element to remove. Returned NULL\n");
@@ -142,8 +138,34 @@ task_t *scheduler() {
 }
 
 /** @function dispatcher
- *  
+ *  Responsible for general control of tasks.It finishes when there're no more user tasks.
 **/
 void dispatcher_body() {
+    int userTasks = queue_size((queue_t *)queueTask);
+    task_t *nextTask = NULL;
+     
+    // execute while there're user tasks
+    while (userTasks > 0) {
+        nextTask = scheduler();
+        
+        if (nextTask)
+            task_switch(nextTask);
+        
+        // remove the first element in the queue because we're using FCFS 
+        userTasks = queue_size((queue_t *)queueTask);
+    }
     
+    // exiting task at 0, but this number represents nothing for now, thus, could be any number
+    task_exit(0);
+}
+
+/** @function dispatcher
+ *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
+**/
+void task_yield() {
+    if (currentTask != &mainTask)
+        queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
+    
+    // returning the processor to dispatcher
+    task_switch(&dispatcherTask);
 }
