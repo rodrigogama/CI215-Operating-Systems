@@ -16,6 +16,8 @@ typedef struct task_t
     struct task_t *prev, *next; // to use with queue library
     int tid;                    // task's ID
     ucontext_t context;         // context itself
+    int dynamicPriority; // scale from -20 to +20 (UNIX style)
+    int staticPriority;  // scale from -20 to +20 (UNIX style)
 } task_t ;
 
 // estrutura que define um semáforo
