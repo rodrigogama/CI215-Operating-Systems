@@ -7,9 +7,11 @@
 
 //#define DEBUG        // for debbuging purposes
 
-int currentId = 1;     // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
-task_t *currentTask;   // pointer to the current task, so that I can keep track of it during context exchange
-task_t mainTask;       // structure to the main task
+int currentId = 1; // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
+int aging = -1;    // task aging
+
+task_t *currentTask; // pointer to the current task, so that I can keep track of it during context exchange
+task_t mainTask;     // structure to the main task
 
 task_t dispatcherTask; // to create a dispatcher as a task
 task_t *queueTask = NULL; // queue of tasks using FCFS policy.
@@ -33,7 +35,7 @@ void ppos_init() {
 	mainTask.tid = currentId; 	   // starting at 1
 	getcontext(&mainTask.context); // gets the current context
 
-    // updating the current context
+    // updating the current task as a main task
 	currentTask = &mainTask;
 
 	#ifdef DEBUG
@@ -56,7 +58,7 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     task->prev = NULL; // just to make sure that the task
     task->next = NULL; // has no previous or next tasks
     task->tid = currentId++; // increases task id
-    
+
     // getting task's context
     getcontext(&task->context);
 
@@ -74,8 +76,11 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     // create the context for the given task
     makecontext(&task->context, (void*)(*start_func), 1, arg);
 
-    // append the task created to the queue
-    queue_append((queue_t **)&queueTask, (queue_t *)task);
+    if (task != &dispatcherTask && task != &mainTask) {
+        queue_append((queue_t **)&queueTask, (queue_t *)task); // append the task created to the queue
+        task->staticPriority = 0; // default priority
+        task->dynamicPriority = 0; // default priority
+    }
 
     #ifdef DEBUG
     printf ("task_create: task created at id: %d\n", task->tid) ;
@@ -127,14 +132,34 @@ int task_id() {
  *  @return {task_t} *task
 **/
 task_t *scheduler() {
-    task_t * res = NULL;
-    res = (task_t *)queue_remove((queue_t **)&queueTask, (queue_t *)queueTask);
-    
+    int userTasks = queue_size((queue_t *)queueTask);
+    task_t *priorityTask = NULL;
+
+    if (userTasks > 0) {
+        task_t *nextTask = queueTask->next;
+        priorityTask = queueTask;
+
+        do {
+            if (nextTask->dynamicPriority < priorityTask->dynamicPriority)
+                priorityTask = nextTask;
+            nextTask = nextTask->next;
+        } while(nextTask != queueTask);
+
+        nextTask = queueTask;
+        
+        do {
+            if (nextTask != priorityTask) nextTask->dynamicPriority += aging;
+            else priorityTask->dynamicPriority = priorityTask->staticPriority;
+            
+            nextTask = nextTask->next;
+        } while (nextTask != queueTask);
+    }
+
     #ifdef DEBUG
-    if (!res) printf("scheduler: there is no element to remove. Returned NULL\n");
+    if (!priorityTask) printf("scheduler: there is no element to schedule. Returned NULL\n");
 	#endif
-    
-    return res;
+
+    return priorityTask;
 }
 
 /** @function dispatcher
@@ -148,8 +173,10 @@ void dispatcher_body() {
     while (userTasks > 0) {
         nextTask = scheduler();
         
-        if (nextTask)
+        if (nextTask) {
+            queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
             task_switch(nextTask);
+        }
         
         // remove the first element in the queue because we're using FCFS 
         userTasks = queue_size((queue_t *)queueTask);
@@ -159,13 +186,57 @@ void dispatcher_body() {
     task_exit(0);
 }
 
-/** @function dispatcher
+/** @function task_yield
  *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
 **/
 void task_yield() {
-    if (currentTask != &mainTask)
+    if (currentTask != &mainTask && currentTask != &dispatcherTask)
         queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
     
     // returning the processor to dispatcher
     task_switch(&dispatcherTask);
+}
+
+/** @function task_setprio
+ *  Set the priority of a given task
+ *  @param  {task_t} *task - task to set the priority to. If task is NULL, the current task has its priority set.
+ *  @param  {int} prio - priority from -20 to +20
+**/
+void task_setprio(task_t *task, int prio) {
+    #ifdef DEBUG
+        if (prio <= -20 || prio >= 20)
+            task == NULL ?
+                printf("task_setprio: task->tid: %d // task priority (%d) is not between -20 and +20\n", currentTask->tid, prio) :
+                printf("task_setprio: task->tid: %d // task priority (%d) is not between -20 and +20\n", task->tid, prio);
+
+        task == NULL ?
+            printf("task_setprio: task->tid: %d set to task->staticPriority: %d\n", currentTask->tid, currentTask->staticPriority) :
+            printf("task_setprio: task->tid: %d set to task->staticPriority: %d\n", task->tid,task->staticPriority);
+    #endif
+
+    if (prio >= -20 && prio <= 20) {
+        if (task == NULL) {
+            currentTask->staticPriority = prio;
+            currentTask->dynamicPriority = prio;
+        }
+        else {
+            task->staticPriority = prio;
+            task->dynamicPriority = prio;
+        }
+    }
+}
+
+/** @function task_getprio
+ *  Get the priority of a given task
+ *  @param  {task_t} *task - task to get the priority from
+ *  @return {int} - task's static priority
+**/
+int task_getprio(task_t *task) {
+    #ifdef DEBUG
+        task == NULL ?
+            printf("task_getprio: task->tid: %d // task->staticPriority: %d\n", currentTask->tid, currentTask->staticPriority) :
+            printf("task_getprio: task->tid %d // task->staticPriority: %d\n", task->tid,task->staticPriority);
+    #endif
+
+    return task == NULL ? currentTask->staticPriority : task->staticPriority;
 }
