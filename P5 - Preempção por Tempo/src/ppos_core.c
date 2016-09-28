@@ -10,16 +10,21 @@
 //#define DEBUG        // for debbuging purposes
 
 int currentId = 1;     // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
+//int clockTicks = 0;
 task_t *currentTask;   // pointer to the current task, so that I can keep track of it during context exchange
 task_t mainTask;       // structure to the main task
 
 task_t dispatcherTask; // to create a dispatcher as a task
 task_t *queueTask = NULL; // queue of tasks using FCFS policy.
 
+/* to compute time */
+struct sigaction action;
+struct itimerval timer;
+
 /* scheduler and dispatcher function headers that are not in ppos.h */
 void dispatcher_body();
 task_t *scheduler();
-
+void handler(int signum);
 
 /** @function ppos_init
  *  Init SO's internal structures. 
@@ -33,6 +38,7 @@ void ppos_init() {
     mainTask.next = NULL;   // at this point there's no next task
 	mainTask.prev = NULL;   // nor previous task
 	mainTask.tid = currentId; 	   // starting at 1
+    mainTask.taskType = SYSTEM_TASK;
 	getcontext(&mainTask.context); // gets the current context
 
     // updating the current context
@@ -44,7 +50,28 @@ void ppos_init() {
     
     // there's no need to set up dispatcherTask at this point since it's gonna happen in task_create.
     // creating dispatcher as a task, passing dispatcher_body function and no args
-	task_create(&dispatcherTask, (void*)(dispatcher_body), NULL);  
+	task_create(&dispatcherTask, (void*)(dispatcher_body), NULL);
+    dispatcherTask.taskType = USER_TASK;
+
+    action.sa_handler = handler;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = 0;
+
+    if (sigaction(SIGALRM, &action, 0) < 0) {
+        perror("ppos_init: sigaction error ");
+        exit(1);
+    }
+
+    timer.it_value.tv_usec = 100; // primeiro disparo, em micro-segundos
+	timer.it_value.tv_sec  = 0;   // primeiro disparo, em segundos
+	timer.it_interval.tv_usec = 1000; // disparos subsequentes, em micro-segundos
+	timer.it_interval.tv_sec  = 0;   // disparos subsequentes, em segundos
+
+	// arma o temporizador ITIMER_REAL (vide man setitimer)
+	if (setitimer(ITIMER_REAL, &timer, 0) < 0) {
+        perror ("ppos_init: setitimer error ");
+        exit (1);
+    }
 }
 
 /** @function task_create
@@ -124,6 +151,17 @@ int task_id() {
     return currentTask == &mainTask ? 0 : currentTask->tid;
 }
 
+/** @function dispatcher
+ *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
+**/
+void task_yield() {
+    if (currentTask != &mainTask)
+        queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
+    
+    // returning the processor to dispatcher
+    task_switch(&dispatcherTask);
+}
+
 /** @function scheduler
  *  Choose the next task to be executed in every context exchange. The criteria is based on FCFS (First-Come, First-Served) policy.
  *  @return {task_t} *task
@@ -150,8 +188,10 @@ void dispatcher_body() {
     while (userTasks > 0) {
         nextTask = scheduler();
         
-        if (nextTask)
+        if (nextTask) {
+            nextTask->quantum = 20;
             task_switch(nextTask);
+        }
         
         // remove the first element in the queue because we're using FCFS 
         userTasks = queue_size((queue_t *)queueTask);
@@ -161,13 +201,10 @@ void dispatcher_body() {
     task_exit(0);
 }
 
-/** @function dispatcher
- *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
+/** @function handler
+ *  Responsible for general control of tasks.It finishes when there're no more user tasks.
 **/
-void task_yield() {
-    if (currentTask != &mainTask)
-        queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
-    
-    // returning the processor to dispatcher
-    task_switch(&dispatcherTask);
+void handler(int signum) {
+    if (currentTask->taskType == SYSTEM_TASK)
+	    currentTask->quantum == 0 ? task_yield() : currentTask->quantum--;
 }

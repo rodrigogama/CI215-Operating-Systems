@@ -10,15 +10,18 @@
 #include <ucontext.h>   // needed for changing contexts
 #define STACKSIZE 32768		/* tamanho de pilha das threads */
 
-typedef enum TaskType{ SYSTEM_TASK, USER_TASK } TaskType
+typedef enum TaskType{ SYSTEM_TASK, USER_TASK } TaskType;
 
 // Estrutura que define uma tarefa
 typedef struct task_t
 {
     struct task_t *prev, *next; // to use with queue library
-    int tid;                    // task's ID
-    ucontext_t context;         // context itself
-    TaskType taskType;
+    int tid; // task's ID
+    ucontext_t context; // context itself
+    int dynamicPriority; // scale from -20 to +20 (UNIX style)
+    int staticPriority;  // scale from -20 to +20 (UNIX style)
+    TaskType taskType; // user task or system task
+    int quantum; // slice of processor time
 } task_t ;
 
 // estrutura que define um semáforo
