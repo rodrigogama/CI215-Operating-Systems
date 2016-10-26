@@ -17,12 +17,11 @@ void queue_append(queue_t **q, queue_t *e) {
         return;
     } 
     else if (e->prev || e->next) { // element has previous or next element, which means that it is already in another queue
-        fprintf(stderr, "Appending: Element is in another queue.\n");
+        //fprintf(stderr, "Appending: Element is in another queue.\n");
         return;
     }
-    
     // checking if the queue is null
-    if (!(*q)) { // Empty queue
+    else if (!(*q)) { // Empty queue
         e->prev = e; // because the queue is empty, 
         e->next = e; // the e->prev and e->next aims
         (*q) = e;      // to the element itself
@@ -47,13 +46,13 @@ void queue_append(queue_t **q, queue_t *e) {
 queue_t *queue_remove(queue_t **q, queue_t *e) {
     
     if (!e) { // checking if the element is null
-        fprintf(stderr, "Element is null.\n");
+        fprintf(stderr, "Removing: Element is null.\n");
         return NULL;
     }
     
     if (!(*q)) { // checking if the queue is empty
-        fprintf(stderr, "Removing: Element is in another queue.\n");
-         return NULL;
+        //fprintf(stderr, "Removing: Element is in another queue.\n");
+        return NULL;
     }
     
     if (e == (*q)) { // element to be removed is the first in queue

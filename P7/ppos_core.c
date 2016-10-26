@@ -4,22 +4,32 @@
 #include "ppos_data.h"  // ppos data structure
 #include <ucontext.h>   // for changing context
 #include "queue.h"
+#include <sys/time.h>
+#include <signal.h>
 
-#define DEBUG        // for debbuging purposes
+//#define DEBUG        // for debbuging purposes
+#define DEFAULT_QUANTUM 20
 
-int currentId = 1; // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
+int currentId = 1;     // keeping track of our contexts' ids. Starting at 1 to avoid one operation currentId++
 int aging = -1;    // task aging
+int clockTicks = 0;
+int startTime = 0;
+int endTime = 0;
 
-task_t *currentTask; // pointer to the current task, so that I can keep track of it during context exchange
-task_t mainTask;     // structure to the main task
-
+task_t *currentTask;   // pointer to the current task, so that I can keep track of it during context exchange
+task_t mainTask;       // structure to the main task
 task_t dispatcherTask; // to create a dispatcher as a task
 task_t *queueTask = NULL; // queue of tasks using FCFS policy.
+
+/* to compute time */
+struct sigaction action;
+struct itimerval timer;
 
 /* scheduler and dispatcher function headers that are not in ppos.h */
 void dispatcher_body();
 task_t *scheduler();
-
+void handler(int signum);
+unsigned int systime();
 
 /** @function ppos_init
  *  Init SO's internal structures. 
@@ -33,9 +43,17 @@ void ppos_init() {
     mainTask.next = NULL;   // at this point there's no next task
 	mainTask.prev = NULL;   // nor previous task
 	mainTask.tid = currentId; 	   // starting at 1
-	getcontext(&mainTask.context); // gets the current context
+    mainTask.taskType = SYSTEM_TASK;
+    mainTask.staticPriority = 0;
+	mainTask.dynamicPriority = 0;
+	mainTask.activations = 0;
+    mainTask.processorTime = 0;
 
-    // updating the current task as a main task
+    queue_append((queue_t **) &queueTask,(queue_t*) &mainTask);
+
+    getcontext(&mainTask.context); // gets the current context
+
+    // updating the current context
 	currentTask = &mainTask;
 
 	#ifdef DEBUG
@@ -45,6 +63,31 @@ void ppos_init() {
     // there's no need to set up dispatcherTask at this point since it's gonna happen in task_create.
     // creating dispatcher as a task, passing dispatcher_body function and no args
 	task_create(&dispatcherTask, (void*)(dispatcher_body), NULL);  
+    dispatcherTask.taskType = USER_TASK;
+    dispatcherTask.activations = 0;
+    dispatcherTask.processorTime = 0;
+
+    action.sa_handler = handler;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = 0;
+
+    if (sigaction(SIGALRM, &action, 0) < 0) {
+        perror("ppos_init: sigaction error ");
+        exit(1);
+    }
+
+    timer.it_value.tv_usec = 100; // primeiro disparo, em micro-segundos
+	timer.it_value.tv_sec  = 0;   // primeiro disparo, em segundos
+	timer.it_interval.tv_usec = 1000; // disparos subsequentes, em micro-segundos
+	timer.it_interval.tv_sec  = 0;   // disparos subsequentes, em segundos
+
+	// arma o temporizador ITIMER_REAL (vide man setitimer)
+	if (setitimer(ITIMER_REAL, &timer, 0) < 0) {
+        perror ("ppos_init: setitimer error ");
+        exit (1);
+    }
+
+    task_yield();
 }
 
 /** @function task_create
@@ -58,6 +101,9 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     task->prev = NULL; // just to make sure that the task
     task->next = NULL; // has no previous or next tasks
     task->tid = currentId++; // increases task id
+    task->taskType = task != &dispatcherTask && task != &mainTask ? USER_TASK : SYSTEM_TASK;
+    task->processorTime = 0;
+    task->activations = 0; 
 
     // getting task's context
     getcontext(&task->context);
@@ -80,6 +126,7 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
         queue_append((queue_t **)&queueTask, (queue_t *)task); // append the task created to the queue
         task->staticPriority = 0; // default priority
         task->dynamicPriority = 0; // default priority
+        task->taskType = SYSTEM_TASK;
     }
 
     #ifdef DEBUG
@@ -95,14 +142,17 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
  *  @param  {int} exitCode - exit code returned from the current task
 **/
 void task_exit(int exitCode) {
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->tid, systime(), currentTask->processorTime, currentTask->activations);
+
     // switching to dispatcherTask or mainTask, based on what step we're at.
     //currentTask != &dispatcherTask ? task_switch(&dispatcherTask) : task_switch(&mainTask);
 
-    if (currentTask == &dispatcherTask)
+    if (currentTask == &dispatcherTask){
 		task_switch(&mainTask);
+	}
 	else {
-		queue_remove((queue_t **) &queueTask,(queue_t*) currentTask);
-		task_switch(&dispatcherTask);
+        queue_remove((queue_t **) &queueTask,(queue_t*) currentTask);
+        task_switch(&dispatcherTask);
     }
 
     #ifdef DEBUG
@@ -134,73 +184,12 @@ int task_id() {
     return currentTask == &mainTask ? 0 : currentTask->tid;
 }
 
-/** @function scheduler
- *  Choose the next task to be executed in every context exchange. The criteria is based on FCFS (First-Come, First-Served) policy.
- *  @return {task_t} *task
-**/
-task_t *scheduler() {
-    int userTasks = queue_size((queue_t *)queueTask);
-    task_t *priorityTask = NULL;
-
-    if (userTasks > 0) {
-        task_t *nextTask = queueTask->next;
-        priorityTask = queueTask;
-
-        do {
-            if (nextTask->dynamicPriority < priorityTask->dynamicPriority)
-                priorityTask = nextTask;
-            nextTask = nextTask->next;
-        } while(nextTask != queueTask);
-
-        nextTask = queueTask;
-        
-        do {
-            if (nextTask != priorityTask) nextTask->dynamicPriority += aging;
-            else priorityTask->dynamicPriority = priorityTask->staticPriority;
-            
-            nextTask = nextTask->next;
-        } while (nextTask != queueTask);
-    }
-
-    #ifdef DEBUG
-    if (!priorityTask) printf("scheduler: there is no element to schedule. Returned NULL\n");
-	#endif
-
-    return priorityTask;
-}
-
 /** @function dispatcher
- *  Responsible for general control of tasks.It finishes when there're no more user tasks.
-**/
-void dispatcher_body() {
-    int userTasks = queue_size((queue_t *)queueTask);
-    task_t *nextTask = NULL;
-     
-    // execute while there're user tasks
-    while (userTasks > 0) {
-        nextTask = scheduler();
-        
-        if (nextTask) {
-            queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
-            task_switch(nextTask);
-        }
-        
-        // remove the first element in the queue because we're using FCFS 
-        userTasks = queue_size((queue_t *)queueTask);
-    }
-    
-    // exiting task at 0, but this number represents nothing for now, thus, could be any number
-    task_exit(0);
-}
-
-/** @function task_yield
  *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
 **/
 void task_yield() {
-    queue_append((queue_t **) &queueTask,(queue_t*)currentTask);
-
-    // if (currentTask != &mainTask && currentTask != &dispatcherTask)
-    //     queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
+    //if (currentTask != &mainTask)
+    queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
     
     // returning the processor to dispatcher
     task_switch(&dispatcherTask);
@@ -248,4 +237,94 @@ int task_getprio(task_t *task) {
     #endif
 
     return task == NULL ? currentTask->staticPriority : task->staticPriority;
+}
+
+/** @function scheduler
+ *  Choose the next task to be executed in every context exchange. The criteria is based on FCFS (First-Come, First-Served) policy.
+ *  @return {task_t} *task
+**/
+task_t *scheduler() {
+    int userTasks = queue_size((queue_t *)queueTask);
+    task_t *priorityTask = NULL;
+
+    if (userTasks > 0) {
+        task_t *nextTask = queueTask->next;
+        priorityTask = queueTask;
+
+        do {
+            if (nextTask->dynamicPriority < priorityTask->dynamicPriority)
+                priorityTask = nextTask;
+            nextTask = nextTask->next;
+        } while(nextTask != queueTask);
+
+        nextTask = queueTask;
+        
+        do {
+            if (nextTask != priorityTask) nextTask->dynamicPriority += aging;
+            else priorityTask->dynamicPriority = priorityTask->staticPriority;
+            
+            nextTask = nextTask->next;
+        } while (nextTask != queueTask);
+    }
+
+    #ifdef DEBUG
+    if (!priorityTask) printf("scheduler: there is no element to schedule. Returned NULL\n");
+	#endif
+
+    return priorityTask;
+}
+
+/** @function dispatcher
+ *  Responsible for general control of tasks.It finishes when there're no more user tasks.
+**/
+void dispatcher_body() {
+    int userTasks = queue_size((queue_t *)queueTask);
+    task_t *nextTask = NULL;
+     
+    // execute while there're user tasks
+    while (userTasks > 0) {
+        nextTask = scheduler();
+        currentTask->activations++;
+
+        if (nextTask) {
+            startTime = systime();
+            nextTask->quantum = DEFAULT_QUANTUM;
+            queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
+            task_switch(nextTask);
+        }
+        
+        // remove the first element in the queue because we're using FCFS 
+        userTasks = queue_size((queue_t *)queueTask);
+    }
+    
+    // exiting task at 0, but this number represents nothing for now, thus, could be any number
+    task_exit(0);
+}
+
+/** @function handler
+ *  Works as an interrupt handler.
+**/
+void handler(int signum) {
+    clockTicks++;
+
+	if (currentTask->taskType == SYSTEM_TASK) {
+		if (currentTask->quantum == 0) {
+            endTime = systime();
+
+			currentTask->processorTime += endTime - startTime;
+			currentTask->activations++;
+			startTime = 0;
+            endTime = 0;
+			task_yield();
+		}
+		else currentTask->quantum--;
+    }
+}
+
+/** @function systime
+ *  Works as a clock getting time in miliseconds
+ *  @return {int} clockTicks
+**/
+unsigned int systime() {
+	return clockTicks;
 }
