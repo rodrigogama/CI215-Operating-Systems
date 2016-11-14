@@ -154,7 +154,9 @@ void task_exit(int exitCode) {
 	}
 	else {
         while (queue_size((queue_t *)queueTask) > 0) {
-            task = queue_remove((queue_t **)&(currentTask->taskJoin), (queue_t *)currentTask->taskJoin);
+            task_t *taskJoin;
+            taskJoin = currentTask->taskJoin;
+            task = queue_remove((queue_t **)&taskJoin, (queue_t *)taskJoin);
             queue_append((queue_t **)&queueTask, (queue_t *)task);
         }
 
