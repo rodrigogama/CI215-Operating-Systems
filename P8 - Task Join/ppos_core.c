@@ -146,6 +146,7 @@ void task_exit(int exitCode) {
     // switching to dispatcherTask or mainTask, based on what step we're at.
     //currentTask != &dispatcherTask ? task_switch(&dispatcherTask) : task_switch(&mainTask);
 
+    task_t *task;
     currentTask->exitCode = exitCode;
 
     if (currentTask == &dispatcherTask){
@@ -250,7 +251,7 @@ int task_join(task_t *task) {
         //enable_preemption(1);
         return -1;
     } else {
-        queue_remove((queue_t **)&queueTask, (queue_t **)currentTask);
+        queue_remove((queue_t **)&queueTask, (queue_t *)currentTask);
         queue_append((queue_t **)&(task->taskJoin), (queue_t *)currentTask);
         task_yield();
         //enable_preemption(1);
