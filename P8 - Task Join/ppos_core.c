@@ -153,8 +153,8 @@ void task_exit(int exitCode) {
 	}
 	else {
         while (queue_size((queue_t *)queueTask) > 0) {
-            task = queue_remove(&(currentTask->taskJoin), currentTask->taskJoin);
-                queue_append(&queueTask, task);
+            task = queue_remove((queue_t **)&(currentTask->taskJoin), (queue_t **)currentTask->taskJoin);
+            queue_append((queue_t **)&queueTask, (queue_t **)task);
         }
 
         //queue_remove((queue_t **) &queueTask,(queue_t*) currentTask);
@@ -250,8 +250,8 @@ int task_join(task_t *task) {
         //enable_preemption(1);
         return -1;
     } else {
-        queue_remove(&queueTask, currentTask);
-        queue_append(&(task->taskJoin), currentTask);
+        queue_remove((queue_t **)&queueTask, (queue_t **)currentTask);
+        queue_append((queue_t **)&(task->taskJoin), (queue_t *)currentTask);
         task_yield();
         //enable_preemption(1);
         return task->exitCode;
