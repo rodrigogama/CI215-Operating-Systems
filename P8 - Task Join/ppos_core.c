@@ -146,7 +146,7 @@ void task_exit(int exitCode) {
     // switching to dispatcherTask or mainTask, based on what step we're at.
     //currentTask != &dispatcherTask ? task_switch(&dispatcherTask) : task_switch(&mainTask);
 
-    task_t *task;
+    queue_t *task;
     currentTask->exitCode = exitCode;
 
     if (currentTask == &dispatcherTask){
