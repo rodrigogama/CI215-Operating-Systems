@@ -10,7 +10,7 @@ int lock;
 
 struct itimerval timer;
 struct sigaction action ;
-task_t *queue_task;
+task_t *queue_task = NULL;
 task_t *sleep_t;
 task_t tasks_q;
 int tasks_id;
@@ -19,7 +19,7 @@ unsigned int tick;
 
 void dispatcher_body();
 task_t* scheduler();
-void tratador(int signum);
+void handler(int signum);
 void wake_tasks(int exit_code, int id);
 
 void ppos_init() {
@@ -57,7 +57,7 @@ void ppos_init() {
 	/* desativa o buffer da saida padrao (stdout), usado pela função printf */
 	//setvbuf (stdout, 0, _IONBF, 0) ;
 	#ifdef DEBUG
-	printf("pinpong_init(): criou a task main id %d\n",tasks_q.id);
+	printf("ppos_init(): criou a task main id %d\n",tasks_q.id);
 	#endif
 	task_create(&Dispatcher,(void*)(dispatcher_body), NULL);
 	task_setprio(&Dispatcher,20);
@@ -254,7 +254,7 @@ void task_suspend(task_t* task, task_t** queue){
 		task->queue = queue;
 	}
 	else{
-		queue_t* aux = queue_remove((queue_t **)&task_running->queue, (queue_t *)task_running);
+		//queue_t* aux = queue_remove((queue_t **)&task_running->queue, (queue_t *)task_running);
 		task_running->ready = 0;
 		queue_append((queue_t **)queue, (queue_t *)task_running);
 		task_running->queue = queue;
