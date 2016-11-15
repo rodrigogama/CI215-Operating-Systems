@@ -64,8 +64,8 @@ void ppos_init() {
     // creating dispatcher as a task, passing dispatcher_body function and no args
 	task_create(&dispatcherTask, (void*)(dispatcher_body), NULL);  
     dispatcherTask.taskType = USER_TASK;
-    // dispatcherTask.activations = 0;
-    // dispatcherTask.processorTime = 0;
+    dispatcherTask.activations = 0;
+    dispatcherTask.processorTime = 0;
 
     action.sa_handler = handler;
 	sigemptyset(&action.sa_mask);
@@ -163,7 +163,7 @@ void task_exit(int exitCode) {
             queue_append((queue_t **)&queueTask, (queue_t *)task);
         }
 
-        //queue_remove((queue_t **) &queueTask,(queue_t*) currentTask);
+        queue_remove((queue_t **) &queueTask,(queue_t*) currentTask);
         task_switch(&dispatcherTask);
     }
 
@@ -177,9 +177,7 @@ void task_exit(int exitCode) {
  *  @param  {task_t} *task - task that will be its context changed
  *  @return {int} - 0 if it succeed, -1 otherwise
 **/
-int task_switch(task_t *task) {
-    //currentTask->activations++;
-    
+int task_switch(task_t *task) {    
     task_t *aux = currentTask;
     currentTask = task;
 
@@ -202,8 +200,8 @@ int task_id() {
  *  Allow some task to go back to the end of the queue, returning the processor to dispatcher
 **/
 void task_yield() {
-    //if (currentTask != &mainTask)
-    queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
+    if (currentTask != &mainTask)
+        queue_append((queue_t **)&queueTask, (queue_t *)currentTask);
     
     // returning the processor to dispatcher
     task_switch(&dispatcherTask);
