@@ -10,16 +10,21 @@ int lock;
 
 struct itimerval timer;
 struct sigaction action ;
-task_t *queue_t;
+task_t *queue_task;
 task_t *sleep_t;
 task_t tasks_q;
 int tasks_id;
 int task_now;
 unsigned int tick;
 
+void dispatcher_body();
+task_t* scheduler();
+void tratador(int signum);
+void wake_tasks(int exit_code, int id);
+
 void ppos_init() {
     char* stack;
-	queue_t = NULL;
+	queue_task = NULL;
 	sleep_t = NULL;
 	lock = 0;
 	tick = 0;
@@ -46,15 +51,15 @@ void ppos_init() {
 	tasks_q.exec_time = systime();
 	tasks_q.proc_time = 0;
 	tasks_q.ready = 1;
-	queue_append(&queue_t,&tasks_q);
-	tasks_q.queue = &queue_t; 
+	queue_append((queue_t **)&queue_task, (queue_t *)tasks_q);
+	tasks_q.queue = &queue_task; 
 	task_running = &tasks_q;
 	/* desativa o buffer da saida padrao (stdout), usado pela função printf */
 	//setvbuf (stdout, 0, _IONBF, 0) ;
 	#ifdef DEBUG
 	printf("pinpong_init(): criou a task main id %d\n",tasks_q.id);
 	#endif
-	task_create(&Dispatcher,dispatcher_body,"");
+	task_create(&Dispatcher,(void*)(dispatcher_body), NULL);
 	task_setprio(&Dispatcher,20);
 	action.sa_handler = handler ;
 	sigemptyset (&action.sa_mask) ;
@@ -109,8 +114,8 @@ int task_create (task_t *task,void (*start_func)(void *),void *arg){
 	task->ready = 1;
 	if(task->id == Dispatcher.id){task->user = 0;}
 	//aloca a tarefa na fila da task main
-	queue_append(&queue_t,task);
-	task->queue = &queue_t;
+	queue_append((queue_t **)&queue_task, (queue_t *)task);
+	task->queue = &queue_task;
 	#ifdef DEBUG
 	printf("task_create(): criou a task %d\n",task->id);
 	#endif
@@ -124,9 +129,9 @@ int task_switch(task_t* task){
 	printf("task_switch(): trocou contexto task %d -> %d\n",task_running->id,task->id);
 	#endif
 	if(task_running->ready == 1){
-		queue_remove(&queue_t,task_running);
+		queue_remove((queue_t **)&queue_task, (queue_t *)task_running);
 		if(task_running->morreu==0){
-			queue_append(&queue_t,task_running);			
+			queue_append((queue_t **)&queue_task, (queue_t *)task_running);			
 		}
 	}
 	task_running->quantum = 20;
@@ -161,7 +166,7 @@ int task_id(){return task_running->id;}//retorna id da task atual
 
 void dispatcher_body(){
 	task_t *schedu = NULL;
-	task_t *aux = queue_t;
+	task_t *aux = queue_task;
 	while(1){
 		if(aux->id == 1 && aux->next->id == 1){task_exit(0);}
 		schedu = scheduler();
@@ -181,10 +186,10 @@ task_t* scheduler(){
 	aux = aux->next;}while(aux->id != queue_t->id);
 	next->prio_din = task_getprio(next);
 	return next;*/
-	task_t *aux = queue_t;
+	task_t *aux = queue_task;
 	do{
 		if(aux->ready == 1){break;}
-	aux = aux->next;}while(aux->id != queue_t->id);
+	aux = aux->next;}while(aux->id != queue_task->id);
 	return aux;
 	//return queue_t;
 }
@@ -235,23 +240,23 @@ void handler(int signum){
 unsigned int systime(){return tick;}
 
 void task_resume (task_t* task){
-	task_t* aux = queue_remove(&sleep_t, task);
+	task_t* aux = queue_remove((queue_t **)&sleep_t, (queue_t *)task);
 	task->ready = 1;
-	queue_append(&queue_t,aux);
-	task->queue = &queue_t;
+	queue_append((queue_t **)&queue_task, (queue_t *)aux);
+	task->queue = &queue_task;
 }
 
 void task_suspend(task_t* task, task_t** queue){
 	if(task != NULL){
-		task_t* aux = queue_remove(task->queue, task);
+		task_t* aux = queue_remove((queue_t **)task->queue, (queue_t *)task);
 		task->ready = 0;
-		queue_append(queue,aux);
+		queue_append((queue_t **)queue, (queue_t *)aux);
 		task->queue = queue;
 	}
 	else{
-		task_t* aux = queue_remove(task_running->queue, task_running);
+		task_t* aux = queue_remove((queue_t **)task_running->queue, (queue_t *)task_running);
 		task_running->ready = 0;
-		queue_append(queue,task_running);
+		queue_append((queue_t **)queue, (queue_t *)task_running);
 		task_running->queue = queue;
 	}
 	task_yield();
@@ -276,6 +281,6 @@ void wake_tasks(int exit_code, int id){
 				aux->wait = exit_code;
 				task_resume(aux);
 			}
-		aux = aux->next;}while(aux->id != queue_t->id);
+		aux = aux->next;}while(aux->id != queue_task->id);
 	}
 }
