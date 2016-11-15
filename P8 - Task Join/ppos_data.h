@@ -8,25 +8,24 @@
 #define __PPOS_DATA__
 
 #include <ucontext.h>   // needed for changing contexts
-#define STACKSIZE 32768		/* tamanho de pilha das threads */
+#define STACKSIZE 32768	// 32kb - tamanho de pilha das threads
 
 typedef enum TaskType{ SYSTEM_TASK, USER_TASK } TaskType;
 
 // Estrutura que define uma tarefa
-typedef struct task_t
-{
-    struct task_t *prev, *next; // to use with queue library
-    int tid;                    // task's ID
-    struct task_t *taskJoin;    // task that will be stored
-    ucontext_t context;         // context itself
-    int dynamicPriority;        // scale from -20 to +20 (UNIX style)
-    int staticPriority;         // scale from -20 to +20 (UNIX style)
-    TaskType taskType;          // user task or system task
-    int quantum;                // slice of processor time
-    int processorTime;          // processor time
-    int startTime, endTime;     // 
-    int activations;            // how many times it was active
+typedef struct task_t {
+    struct task_t *prev, *next, join;
+    ucontext_t context;
+    TaskType taskType;
+    int tid;
+    int priority, age;
+    int quantum;
+    int startTime, endTime;
+    int processorTime; 
+    int activations;
     int exitCode;
+    int dynamicPriority;
+    int staticPriority;
 } task_t ;
 
 // estrutura que define um semáforo

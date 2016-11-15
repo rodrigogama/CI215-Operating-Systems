@@ -44,11 +44,13 @@ void ppos_init() {
 	mainTask.prev = NULL;   // nor previous task
 	mainTask.tid = currentId; 	   // starting at 1
     mainTask.taskType = SYSTEM_TASK;
+    mainTask.startTime = systime();
     mainTask.staticPriority = 0;
 	mainTask.dynamicPriority = 0;
 	mainTask.activations = 0;
     mainTask.processorTime = 0;
-    
+    mainTask.join = NULL;
+
     getcontext(&mainTask.context); // gets the current context
     queue_append((queue_t **) &queueTask,(queue_t*) &mainTask);
 
@@ -85,7 +87,7 @@ void ppos_init() {
         exit (1);
     }
 
-    task_yield();
+    //task_yield();
 }
 
 /** @function task_create
@@ -100,9 +102,11 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
     task->next = NULL; // has no previous or next tasks
     task->tid = currentId++; // increases task id
     task->taskType = task != &dispatcherTask && task != &mainTask ? USER_TASK : SYSTEM_TASK;
+    task->startTime = systime();
     task->processorTime = 0;
     task->activations = 0;
     task->exitCode = 0; 
+    task->join = NULL;
 
     // getting task's context
     getcontext(&task->context);
@@ -141,7 +145,8 @@ int task_create(task_t *task, void(*start_func)(void *), void *arg) {
  *  @param  {int} exitCode - exit code returned from the current task
 **/
 void task_exit(int exitCode) {
-    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->tid, systime(), currentTask->processorTime, currentTask->activations);
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", 
+        currentTask->tid, systime(), currentTask->processorTime, currentTask->activations);
 
     // switching to dispatcherTask or mainTask, based on what step we're at.
     //currentTask != &dispatcherTask ? task_switch(&dispatcherTask) : task_switch(&mainTask);
@@ -153,10 +158,8 @@ void task_exit(int exitCode) {
 		task_switch(&mainTask);
 	}
 	else {
-        while (queue_size((queue_t *)queueTask) > 0) {
-            task_t *taskJoin;
-            taskJoin = currentTask->taskJoin;
-            task = queue_remove((queue_t **)&taskJoin, (queue_t *)taskJoin);
+        while (queue_size((queue_t *)currentTask->join) > 0) {
+            task = queue_remove((queue_t **)&currentTask->join, (queue_t *)currentTask->join);
             queue_append((queue_t **)&queueTask, (queue_t *)task);
         }
 
@@ -175,6 +178,8 @@ void task_exit(int exitCode) {
  *  @return {int} - 0 if it succeed, -1 otherwise
 **/
 int task_switch(task_t *task) {
+    currentTask->activations++;
+    
     task_t *aux = currentTask;
     currentTask = task;
 
@@ -248,13 +253,17 @@ int task_getprio(task_t *task) {
     return task == NULL ? currentTask->staticPriority : task->staticPriority;
 }
 
+/** @function task_join
+ *  TODO
+ *  @return {Integer} - exit code
+**/
 int task_join(task_t *task) {
     if (task == NULL) {
         //enable_preemption(1);
         return -1;
     } else {
         queue_remove((queue_t **)&queueTask, (queue_t *)currentTask);
-        queue_append((queue_t **)&(task->taskJoin), (queue_t *)currentTask);
+        queue_append((queue_t **)&task->join, (queue_t *)currentTask);
         task_yield();
         //enable_preemption(1);
         return task->exitCode;
@@ -268,8 +277,13 @@ int task_join(task_t *task) {
  *  @return {task_t} *task
 **/
 task_t *scheduler() {
+    //task_t *priorityTask, *aux;
+
     int userTasks = queue_size((queue_t *)queueTask);
     task_t *priorityTask = NULL;
+
+    // priorityTask = queueTask;
+    // aux = queueTask;
 
     if (userTasks > 0) {
         task_t *nextTask = queueTask->next;
@@ -303,21 +317,32 @@ task_t *scheduler() {
 **/
 void dispatcher_body() {
     int userTasks = queue_size((queue_t *)queueTask);
+    int startTime, endTime;
     task_t *nextTask = NULL;
      
     // execute while there're user tasks
     while (userTasks > 0) {
+        startTime = systime();
         nextTask = scheduler();
-        currentTask->activations++;
+
+        //currentTask->activations++;
 
         if (nextTask) {
-            startTime = systime();
+            endTime = systime();
+            currentTask->processorTime += startTime - endTime;
+
+            //startTime = systime();
             nextTask->quantum = DEFAULT_QUANTUM;
-            queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
-            task_switch(nextTask);
+            // queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
+            // task_switch(nextTask);
+
+            startTime = systime();
+            task_switch(nextTask); 
+            endTime = systime();
+            
+            nextTask->processorTime += startTime - endTime;
         }
         
-        // remove the first element in the queue because we're using FCFS 
         userTasks = queue_size((queue_t *)queueTask);
     }
     
@@ -333,12 +358,12 @@ void handler(int signum) {
 
 	if (currentTask->taskType == SYSTEM_TASK) {
 		if (currentTask->quantum == 0) {
-            endTime = systime();
+            // endTime = systime();
 
-			currentTask->processorTime += endTime - startTime;
+			// currentTask->processorTime += endTime - startTime;
 			currentTask->activations++;
-			startTime = 0;
-            endTime = 0;
+			// startTime = 0;
+            // endTime = 0;
 			task_yield();
 		}
 		else currentTask->quantum--;
