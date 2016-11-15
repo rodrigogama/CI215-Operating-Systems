@@ -124,7 +124,7 @@ int task_create (task_t *task,void (*start_func)(void *),void *arg){
 
 int task_switch(task_t* task){
 	task_t* aux = task_running;
-	unsigned int time;
+	//unsigned int time;
 	#ifdef DEBUG
 	printf("task_switch(): trocou contexto task %d -> %d\n",task_running->id,task->id);
 	#endif
@@ -240,7 +240,7 @@ void handler(int signum){
 unsigned int systime(){return tick;}
 
 void task_resume (task_t* task){
-	task_t* aux = queue_remove((queue_t **)&sleep_t, (queue_t *)task);
+	queue_t* aux = queue_remove((queue_t **)&sleep_t, (queue_t *)task);
 	task->ready = 1;
 	queue_append((queue_t **)&queue_task, (queue_t *)aux);
 	task->queue = &queue_task;
@@ -248,13 +248,13 @@ void task_resume (task_t* task){
 
 void task_suspend(task_t* task, task_t** queue){
 	if(task != NULL){
-		task_t* aux = queue_remove((queue_t **)task->queue, (queue_t *)task);
+		queue_t* aux = queue_remove((queue_t **)&task->queue, (queue_t *)task);
 		task->ready = 0;
 		queue_append((queue_t **)queue, (queue_t *)aux);
 		task->queue = queue;
 	}
 	else{
-		task_t* aux = queue_remove((queue_t **)task_running->queue, (queue_t *)task_running);
+		queue_t* aux = queue_remove((queue_t **)&task_running->queue, (queue_t *)task_running);
 		task_running->ready = 0;
 		queue_append((queue_t **)queue, (queue_t *)task_running);
 		task_running->queue = queue;
