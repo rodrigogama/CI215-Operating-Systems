@@ -14,7 +14,7 @@ typedef enum TaskType{ SYSTEM_TASK, USER_TASK } TaskType;
 
 // Estrutura que define uma tarefa
 typedef struct task_t {
-    struct task_t *prev, *next, join;
+    struct task_t *prev, *next, *join;
     ucontext_t context;
     TaskType taskType;
     int tid;

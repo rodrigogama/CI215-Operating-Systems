@@ -178,7 +178,7 @@ void task_exit(int exitCode) {
  *  @return {int} - 0 if it succeed, -1 otherwise
 **/
 int task_switch(task_t *task) {
-    currentTask->activations++;
+    //currentTask->activations++;
     
     task_t *aux = currentTask;
     currentTask = task;
@@ -317,24 +317,18 @@ task_t *scheduler() {
 **/
 void dispatcher_body() {
     int userTasks = queue_size((queue_t *)queueTask);
-    int startTime, endTime;
     task_t *nextTask = NULL;
      
     // execute while there're user tasks
     while (userTasks > 0) {
-        startTime = systime();
         nextTask = scheduler();
-
-        //currentTask->activations++;
+        currentTask->activations++;
 
         if (nextTask) {
-            endTime = systime();
-            currentTask->processorTime += startTime - endTime;
-
-            //startTime = systime();
+            startTime = systime();
             nextTask->quantum = DEFAULT_QUANTUM;
-            // queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
-            // task_switch(nextTask);
+            queue_remove((queue_t **)&queueTask,(queue_t*)nextTask);
+            task_switch(nextTask);
 
             startTime = systime();
             task_switch(nextTask); 
@@ -358,12 +352,12 @@ void handler(int signum) {
 
 	if (currentTask->taskType == SYSTEM_TASK) {
 		if (currentTask->quantum == 0) {
-            // endTime = systime();
+            endTime = systime();
 
-			// currentTask->processorTime += endTime - startTime;
+			currentTask->processorTime += endTime - startTime;
 			currentTask->activations++;
-			// startTime = 0;
-            // endTime = 0;
+			startTime = 0;
+            endTime = 0;
 			task_yield();
 		}
 		else currentTask->quantum--;
